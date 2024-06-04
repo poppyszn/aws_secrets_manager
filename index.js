@@ -1,29 +1,45 @@
-import {
-  SecretsManagerClient,
-  GetSecretValueCommand,
-} from "@aws-sdk/client-secrets-manager";
+require('dotenv').config();
+const AWS = require('aws-sdk');
 
-const secret_name = "test_secret";
-
-const client = new SecretsManagerClient({
-  region: "us-east-1",
+// Load AWS credentials and region from environment variables
+AWS.config.update({
+  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  region: process.env.AWS_REGION
 });
 
-let response;
+const secretsManager = new AWS.SecretsManager();
 
-try {
-  response = await client.send(
-    new GetSecretValueCommand({
-      SecretId: secret_name,
-      VersionStage: "AWSCURRENT", 
-    })
-  );
-} catch (error) {
-  throw error;
+async function getSecretValue(secretName) {
+  return new Promise((resolve, reject) => {
+    secretsManager.getSecretValue({ SecretId: secretName }, (err, data) => {
+      if (err) {
+        reject(err);
+      } else {
+        if ('SecretString' in data) {
+          resolve(JSON.parse(data.SecretString));
+        } else {
+          const buff = Buffer.from(data.SecretBinary, 'base64');
+          resolve(JSON.parse(buff.toString('ascii')));
+        }
+      }
+    });
+  });
 }
 
-const secret = JSON.parse(response.SecretString);
+(async () => {
+  try {
+    const secretName = process.env.SECRET_NAME;
+    const secrets = await getSecretValue(secretName);
+    
+    // Add secrets to process.env
+    Object.keys(secrets).forEach(key => {
+      process.env[key] = secrets[key];
+    });
 
-// Print out the secret called 'username'
-console.log("Username:", secret.username);
-
+    // Log all environment variables
+    console.log(process.env);
+  } catch (error) {
+    console.error('Error retrieving secrets:', error);
+  }
+})();
